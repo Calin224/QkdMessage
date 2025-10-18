@@ -49,8 +49,9 @@ class BB84:
         measured_circuits = []
         for qc,basis in zip(circuits,bases):
             measured_qc = qc.copy()
-            if basis == 1:
-                measured_qc.measure(0,0)
+            if basis == 1: 
+                measured_qc.h(0)  
+            measured_qc.measure(0,0)
             measured_circuits.append(measured_qc)
         return measured_circuits
     
@@ -59,51 +60,60 @@ class BB84:
         qc = QuantumCircuit(num_of_qubits,num_of_qubits)
         
         for i in range(num_of_qubits):
-            if alice_bases[i]==0:
+            if alice_bases[i]==0:  
                 if alice_bits[i]==1:
-                    qc.x(i)
-            else:
+                    qc.x(i)  
+            else:  
                 if alice_bits[i]==0:
-                    qc.h(i)
+                    qc.h(i)  
                 else:
                     qc.x(i)
-                    qc.h(i)
+                    qc.h(i)  
         
         qc.barrier()
+        
         for i in range(num_of_qubits):
-            if bob_bases[i]==1:
+            if bob_bases[i]==1:  
                 qc.h(i)
+        
         qc.measure_all()
-            
-        qc.draw()
         return qc
     
     def remove_garbage(self,a_bases,b_bases,bits):
-        result = []
-        for i, bit in enumerate(bits):
-            if a_bases[i] == b_bases[i]:
-                result.append(bit)
-        return result
+        return [bit for i, bit in enumerate(bits) if a_bases[i] == b_bases[i]]
+        
 
     def run(self):
         self.generate_alice_bits()
         self.choose_alice_bases()
-
-        message = self.encode_messag(self.alice_bits,self.alice_bases)
-        
         self.choose_bob_bases()
-        bob_circuits =  self.measure_message(message,self.bob_bases)
-        full_circuit = self.build_circuits(self.alice_bits,self.alice_bases,self.bob_bases)
-
+        
+        print(f"Alice bits: {self.alice_bits}")
+        print(f"Alice bases: {self.alice_bases}")
+        print(f"Bob bases: {self.bob_bases}")
+        
+        full_circuit = self.build_circuits(self.alice_bits, self.alice_bases, self.bob_bases)
+        
         backend = AerSimulator()
         transpiled_result = transpile(full_circuit, backend)
-        job = backend.run(transpiled_result)
+        job = backend.run(transpiled_result, shots=1)
         result = job.result()
         counts = result.get_counts()
+        
+        measurement_result = list(counts.keys())[0] 
+        bob_bits_raw = [int(bit) for bit in measurement_result.replace(' ', '')]
+        bob_bits = bob_bits_raw[:self.key_length][::-1]
+        
+        print(f"Bob measurement result: {bob_bits}")
+        
+        final_key = self.remove_garbage(self.alice_bases, self.bob_bases, bob_bits)
+        
+        print(f"Final shared key: {final_key}")
+        print(f"Key length: {len(final_key)}")
+        
+        return final_key
 
-        print(f"Key: {counts}")
-
-bb84 = BB84(key_length=20)
+bb84 = BB84(key_length=5)
 bb84.run()
 
     
