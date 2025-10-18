@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+
+{% block title %}WebSocket Chat - Flask Server{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-comments"></i> WebSocket Chat</h5>
+            </div>
+            <div class="card-body">
+                <div id="messages" class="message-container">
+                    <div class="message system">
+                        <strong>System:</strong> Welcome to the Flask WebSocket server! Type a message below to get started.
+                    </div>
+                </div>
+                
+                <div class="input-group mt-3">
+                    <input type="text" id="messageInput" class="form-control" placeholder="Type your message..." disabled>
+                    <button id="sendButton" class="btn btn-primary" type="button" disabled>
+                        <i class="fas fa-paper-plane"></i> Send
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-cog"></i> Settings</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="usernameInput" class="form-label">Username</label>
+                    <input type="text" id="usernameInput" class="form-control" value="Anonymous">
+                </div>
+                
+                <div class="mb-3">
+                    <label for="roomInput" class="form-label">Room</label>
+                    <input type="text" id="roomInput" class="form-control" placeholder="Enter room name">
+                </div>
+                
+                <div class="d-grid gap-2">
+                    <button id="joinRoomButton" class="btn btn-success">
+                        <i class="fas fa-door-open"></i> Join Room
+                    </button>
+                    <button id="leaveRoomButton" class="btn btn-warning" disabled>
+                        <i class="fas fa-door-closed"></i> Leave Room
+                    </button>
+                    <button id="broadcastButton" class="btn btn-info">
+                        <i class="fas fa-bullhorn"></i> Broadcast
+                    </button>
+                </div>
+                
+                <hr>
+                
+                <div class="mb-2">
+                    <strong>Connections:</strong> <span id="connectionCount">0</span>
+                </div>
+                
+                <button id="refreshConnections" class="btn btn-sm btn-outline-secondary">
+                    <i class="fas fa-sync"></i> Refresh
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // WebSocket connection
+    const socket = io();
+    let currentRoom = null;
+    
+    // DOM elements
+    const messageInput = document.getElementById('messageInput');
+    const sendButton = document.getElementById('sendButton');
+    const messagesDiv = document.getElementById('messages');
+    const usernameInput = document.getElementById('usernameInput');
+    const roomInput = document.getElementById('roomInput');
+    const joinRoomButton = document.getElementById('joinRoomButton');
+    const leaveRoomButton = document.getElementById('leaveRoomButton');
+    const broadcastButton = document.getElementById('broadcastButton');
+    const connectionCount = document.getElementById('connectionCount');
+    const refreshConnections = document.getElementById('refreshConnections');
+    const statusIndicator = document.getElementById('status-indicator');
+    const connectionStatus = document.getElementById('connection-status');
+    
+    // Connection handlers
+    socket.on('connect', function() {
+        console.log('Connected to server');
+        statusIndicator.className = 'status-indicator status-connected';
+        connectionStatus.textContent = 'Connected';
+        messageInput.disabled = false;
+        sendButton.disabled = false;
+        addMessage('System', 'Connected to server', 'system');
+    });
+    
+    socket.on('disconnect', function() {
+        console.log('Disconnected from server');
+        statusIndicator.className = 'status-indicator status-disconnected';
+        connectionStatus.textContent = 'Disconnected';
+        messageInput.disabled = true;
+        sendButton.disabled = true;
+        addMessage('System', 'Disconnected from server', 'system');
+    });
+    
+    // Message handlers
+    socket.on('status', function(data) {
+        addMessage('System', data.message, 'system');
+    });
+    
+    socket.on('new_message', function(data) {
+        addMessage(data.username, data.message, 'message');
+    });
+    
+    socket.on('broadcast_message', function(data) {
+        addMessage('Broadcast', data.message, 'system');
+    });
+    
+    socket.on('room_joined', function(data) {
+        addMessage('System', `Joined room: ${data.room}`, 'system');
+        currentRoom = data.room;
+        leaveRoomButton.disabled = false;
+    });
+    
+    socket.on('room_left', function(data) {
+        addMessage('System', `Left room: ${data.room}`, 'system');
+        currentRoom = null;
+        leaveRoomButton.disabled = true;
+    });
+    
+    socket.on('connections_count', function(data) {
+        connectionCount.textContent = data.count;
+    });
+    
+    socket.on('error', function(data) {
+        addMessage('Error', data.message, 'error');
+    });
+    
+    // Event listeners
+    sendButton.addEventListener('click', sendMessage);
+    messageInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            sendMessage();
+        }
+    });
+    
+    joinRoomButton.addEventListener('click', function() {
+        const room = roomInput.value.trim();
+        if (room) {
+            socket.emit('join_room', { room: room });
+        }
+    });
+    
+    leaveRoomButton.addEventListener('click', function() {
+        if (currentRoom) {
+            socket.emit('leave_room', { room: currentRoom });
+        }
+    });
+    
+    broadcastButton.addEventListener('click', function() {
+        const message = messageInput.value.trim();
+        if (message) {
+            socket.emit('broadcast', { 
+                message: message,
+                timestamp: new Date().toISOString()
+            });
+            messageInput.value = '';
+        }
+    });
+    
+    refreshConnections.addEventListener('click', function() {
+        socket.emit('get_connections');
+    });
+    
+    // Functions
+    function sendMessage() {
+        const message = messageInput.value.trim();
+        const username = usernameInput.value.trim() || 'Anonymous';
+        
+        if (message) {
+            if (currentRoom) {
+                socket.emit('send_message', {
+                    message: message,
+                    username: username,
+                    room: currentRoom,
+                    timestamp: new Date().toISOString()
+                });
+            } else {
+                addMessage('You', message, 'message');
+            }
+            messageInput.value = '';
+        }
+    }
+    
+    function addMessage(username, message, type) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${type}`;
+        
+        const timestamp = new Date().toLocaleTimeString();
+        messageDiv.innerHTML = `
+            <strong>${username}:</strong> ${message}
+            <small class="text-muted float-end">${timestamp}</small>
+        `;
+        
+        messagesDiv.appendChild(messageDiv);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+    
+    // Initialize
+    socket.emit('get_connections');
+</script>
+{% endblock %}
