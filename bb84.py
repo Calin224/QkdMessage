@@ -7,12 +7,12 @@ class BB84:
     def __init__(self, key_length=5):
         self.key_length = key_length
 
-        self.polarization_map = {
-            ('+', 0): '→',
-            ('+', 1): '↑',
-            ('x', 0): '↗',
-            ('x', 1): '↖',
-        }
+        # self.polarization_map = {
+        #     ('+', 0): '→',
+        #     ('+', 1): '↑',
+        #     ('x', 0): '↗',
+        #     ('x', 1): '↖',
+        # }
 
         self.alice_bits = []
         self.alice_bases = []
