@@ -1,5 +1,4 @@
 from qiskit import QuantumCircuit, transpile
-from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2 as Sampler
 import numpy as np
 import random
 from typing import List
@@ -99,12 +98,13 @@ class BB84:
         
         return qc
     
-    def run(self):
+    def run(self,bob_bases=None):
         alice_bits = self.sender.generate_bits()
         alice_bases = self.sender.choose_bases()
         
-        bob_bases = self.receiver.choose_bases()
-        
+        if bob_bases == None:
+            bob_bases = self.receiver.choose_bases()
+
         print(f"Alice bits: {alice_bits}")
         print(f"Alice bases: {alice_bases}")
         print(f"Bob bases: {bob_bases}")
@@ -131,4 +131,5 @@ class BB84:
         return self.shared_key
 
 bb84 = BB84(key_length=5)
+
 bb84.run()

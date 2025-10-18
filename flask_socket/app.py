@@ -1,12 +1,63 @@
-from flask import Flask, render_template, request
+from flask import Flask, jsonify, render_template, request
 from flask_socketio import SocketIO, emit, send
 import jwt, time, requests, datetime
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.backends import default_backend
+import base64
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from bb84_qskit import BB84, Sender
 
 SECRET_KEY = "43217896589172571"
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_secret_key'
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+sender = Sender()
+bb84 = BB84()
+
+shared_key = None
+
+def get_aes_key():
+    if not shared_key or not isinstance(shared_key, list):
+        return None
+    bits = shared_key[:128]
+    bits += [0] * (128 - len(bits))
+    b = bytearray()
+    for i in range(0, 128, 8):
+        byte = 0
+        for j in range(8):
+            byte = (byte << 1) | bits[i + j]
+        b.append(byte)
+    return bytes(b)
+
+def aes_encrypt(plaintext):
+    key = get_aes_key()
+    if not key:
+        return plaintext
+    iv = b'\x00' * 16
+    padder = padding.PKCS7(128).padder()
+    padded = padder.update(plaintext.encode()) + padder.finalize()
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+    encryptor = cipher.encryptor()
+    ct = encryptor.update(padded) + encryptor.finalize()
+    return base64.b64encode(ct).decode()
+
+def aes_decrypt(ciphertext):
+    key = get_aes_key()
+    if not key:
+        return ciphertext
+    iv = b'\x00' * 16
+    ct = base64.b64decode(ciphertext)
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+    decryptor = cipher.decryptor()
+    padded = decryptor.update(ct) + decryptor.finalize()
+    unpadder = padding.PKCS7(128).unpadder()
+    pt = unpadder.update(padded) + unpadder.finalize()
+    return pt.decode()
 
 saved_messages = []
 all_messages = []
@@ -18,11 +69,13 @@ def index():
     global saved_messages,all_messages
     if request.method == "POST":
         user_message = request.form["message"]
+        enc_message = aes_encrypt(user_message)
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print("User sent:", user_message)
         message_entry = {
             "type": "sent",
             "text": user_message,
+            "enc": enc_message,
             "time": timestamp
         }
         # Save locally
@@ -32,16 +85,58 @@ def index():
         # Add to combined list and sort by time
         all_messages.append(message_entry)
         all_messages = sorted(all_messages, key=lambda x: x["time"], reverse=False)
-        # Trimite mesajul la serverul B (port 5000)
+        # Emit to WebSocket clients so UI updates live
         try:
-            r = requests.post("http://127.0.0.1:5001/receive", json={"msg": user_message})
-            print(f"➡️ Sent to Server B (5000): {user_message} | Response: {r.text}")
+            socketio.emit("new_message", message_entry)
+        except Exception:
+            pass
+        # Send encrypted message to Server B
+        try:
+            r = requests.post("http://127.0.0.1:5001/receive", json={"msg": enc_message})
+            print(f"➡️ Sent to Server B (5000): {enc_message} | Response: {r.text}")
         except Exception as e:
             print(f"❌ Could not send to Server B: {e}")
 
-    messages = [f'{m["time"]} | ({m["type"]}) {m["text"]}' for m in all_messages]
+    # Build a list of dicts for display: only show encrypted for sent messages
+    display_messages = []
+    for m in all_messages:
+        enc_val = m["enc"] if m["type"] == "sent" else None
+        display_messages.append({
+            "msg": f'{m["time"]} | ({m["type"]}) {m["text"]}',
+            "enc": enc_val,
+            "type": m["type"]
+        })
     # messages = ["Hello", "Welcome", "Flask is cool", "WebSockets soon", "Good luck!"]
-    return render_template("index.html", messages=messages, saved_messages=saved_messages)
+    global shared_key
+    disabled = shared_key is None
+    return render_template("index.html", display_messages=display_messages, saved_messages=saved_messages, disabled=disabled, shared_key=shared_key)
+
+@app.route('/establish_connection', methods=['POST'])
+def establish_connection():
+    global shared_key
+    try:
+        receiver_bases = None
+        response = requests.post("http://127.0.0.1:5001/establish")
+        if response.ok:
+            receiver_bases = response.json().get('bases')
+            print(f"📡 Received Bob bases: {receiver_bases}")
+        else:
+            print(f"❌ Establish failed with status {response.status_code}")
+            return jsonify({"error": "Failed to get bases"}), 500
+
+        shared_key = bb84.run(receiver_bases)
+        print(f"Shared_key SSSSSS: {shared_key}")
+
+        try:
+            r = requests.post("http://127.0.0.1:5001/receive-shared-key", json={"shared_key": shared_key})
+            print(f"Sent shared_key to App B, response: {r.text}")
+        except Exception as e:
+            print(f"❌ Could not send shared_key to App B: {e}")
+
+        return jsonify({"shared_key": shared_key})
+    except Exception as e:
+        print(f"❌ Could not establish connection: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/send', methods=['POST'])
@@ -57,7 +152,11 @@ def receive():
     """Receive messages from Server B."""
     global all_messages
     recv_data = request.get_json()
-    msg = recv_data.get("msg")
+    enc_msg = recv_data.get("msg")
+    try:
+        msg = aes_decrypt(enc_msg)
+    except Exception:
+        msg = enc_msg
     recv_time = recv_data.get("time", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     message_entry = {
         "type": "received",

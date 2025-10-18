@@ -52,18 +52,21 @@
   </style>
 </head>
 <body>
-  <h2>Live Chat</h2>
 
-  <form action="/" method="post">
-    <input type="text" id="message" name="message" placeholder="Type your message..." required>
-    <button type="submit">Send</button>
-  </form>
+  <h2>Live Chat</h2>
+    <form action="/" method="post">
+      <input type="text" id="message" name="message" placeholder="Type your message..." required {% if disabled %}disabled{% endif %}>
+      <button type="submit" {% if disabled %}disabled{% endif %}>Send</button>
+    </form>
 
   <h3>All Messages (Live):</h3>
   <ul id="message-list">
-    {% for msg in messages %}
-      {% set msg_type = 'sent' if '(sent)' in msg else 'received' %}
-      <li class="{{ msg_type }}">{{ msg.replace('[','').split(']', 1)[-1].strip() }}</li>
+    {% for item in display_messages %}
+      {% set msg_type = 'sent' if '(sent)' in item.msg else 'received' %}
+      <li class="{{ msg_type }}">
+        {{ item.msg.replace('[','').split(']', 1)[-1].strip() }}
+        {% if item.enc %}<br><span style="font-size: 0.8em; color: #888;">Encrypted: {{ item.enc }}</span>{% endif %}
+      </li>
     {% endfor %}
   </ul>
 
@@ -80,8 +83,21 @@
       // eliminăm data din text (de exemplu "[2025-10-18 15:30:12] Salut!")
       const cleanText = data.text.replace(/\[.*?\]\s*/, "");
 
-      li.textContent = cleanText;
       li.classList.add(data.type); // "sent" or "received"
+
+      const span = document.createElement('span');
+      span.textContent = cleanText;
+      li.appendChild(span);
+
+      if (data.enc && data.type === 'sent') {
+        const br = document.createElement('br');
+        const small = document.createElement('span');
+        small.style.fontSize = '0.8em';
+        small.style.color = '#888';
+        small.textContent = 'Encrypted: ' + data.enc;
+        li.appendChild(br);
+        li.appendChild(small);
+      }
 
       document.getElementById('message-list').appendChild(li);
     });
