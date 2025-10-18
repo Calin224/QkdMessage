@@ -5,39 +5,37 @@ import random
 from typing import List
 from qiskit_aer import AerSimulator
 
-# Eave
-class BB84:
+class Sender:
+    """Clasa pentru Alice (Sender) în protocolul BB84"""
     def __init__(self, key_length=5):
         self.key_length = key_length
-
-        self.alice_bits = []
-        self.alice_bases = []
-
-        self.bob_bases = []
-        self.key = []
-
-    def generate_alice_bits(self):
-        self.alice_bits = [random.randint(0, 1) for _ in range(self.key_length)]
-
-    def choose_alice_bases(self):
-        self.alice_bases = [random.choice([0,1] ) for _ in range(self.key_length)]
-
-    def choose_bob_bases(self): 
-        self.bob_bases = [random.choice([0,1]) for _ in range(self.key_length)]
-
-    def compute_bob_key(self, alice_bit, alice_basis, bob_basis):
-        if alice_basis == bob_basis:
-            self.key.append(alice_bit)
-
-
-    def encode_messag(self,bits,bases):
+        self.bits = []
+        self.bases = []
+    
+    def generate_bits(self):
+        """Generează biti aleatorii"""
+        self.bits = [random.randint(0, 1) for _ in range(self.key_length)]
+        return self.bits
+    
+    def choose_bases(self):
+        """Alege baze aleatorii pentru măsurare"""
+        self.bases = [random.choice([0, 1]) for _ in range(self.key_length)]
+        return self.bases
+    
+    def encode_qubits(self, bits=None, bases=None):
+        """Encodează bitii în qubiti folosind bazele specificate"""
+        if bits is None:
+            bits = self.bits
+        if bases is None:
+            bases = self.bases
+            
         circuits = []
-        for bit, basis in zip(bits,bases):
-            qc = QuantumCircuit(1,1)
-            if basis == 0:
+        for bit, basis in zip(bits, bases):
+            qc = QuantumCircuit(1, 1)
+            if basis == 0: 
                 if bit == 1:
                     qc.x(0)
-            else:
+            else: 
                 if bit == 0:
                     qc.h(0)
                 else:
@@ -45,55 +43,84 @@ class BB84:
                     qc.h(0)
             circuits.append(qc)
         return circuits
-        
-    def measure_message(self,circuits,bases):
+
+class Receiver:
+    """Clasa pentru Bob (Receiver) în protocolul BB84"""
+    def __init__(self, key_length=5):
+        self.key_length = key_length
+        self.bases = []
+        self.measurement_results = []
+    
+    def choose_bases(self):
+        """Alege baze aleatorii pentru măsurare"""
+        self.bases = [random.choice([0, 1]) for _ in range(self.key_length)]
+        return self.bases
+    
+    def measure_qubits(self, circuits, bases=None):
+        """Măsoară qubitii în bazele specificate"""
+        if bases is None:
+            bases = self.bases
+            
         measured_circuits = []
-        for qc,basis in zip(circuits,bases):
+        for qc, basis in zip(circuits, bases):
             measured_qc = qc.copy()
             if basis == 1: 
-                measured_qc.h(0)  
-            measured_qc.measure(0,0)
+                measured_qc.h(0)
+            measured_qc.measure(0, 0)
             measured_circuits.append(measured_qc)
         return measured_circuits
     
-    def build_circuits(self,alice_bits,alice_bases,bob_bases):
-        num_of_qubits = len(alice_bits)
-        qc = QuantumCircuit(num_of_qubits,num_of_qubits)
+    def extract_key(self, measurement_results, alice_bases, bob_bases):
+        """Extrage cheia comună din măsurătorile cu baze identice"""
+        return [bit for i, bit in enumerate(measurement_results) 
+                if alice_bases[i] == bob_bases[i]]
+
+class BB84:
+    """Clasa principală pentru protocolul BB84"""
+    def __init__(self, key_length=5):
+        self.key_length = key_length
+        self.sender = Sender(key_length)
+        self.receiver = Receiver(key_length)
+        self.shared_key = []
+    
+    def build_circuits(self, alice_bits, alice_bases, bob_bases):
+        """Construiește circuitul complet folosind funcțiile generice"""
+        alice_circuits = self.sender.encode_qubits(alice_bits, alice_bases)
+        bob_circuits = self.receiver.measure_qubits(alice_circuits, bob_bases)
         
-        for i in range(num_of_qubits):
-            if alice_bases[i]==0:  
-                if alice_bits[i]==1:
-                    qc.x(i)  
-            else:  
-                if alice_bits[i]==0:
-                    qc.h(i)  
-                else:
+        num_of_qubits = len(alice_bits)
+        qc = QuantumCircuit(num_of_qubits, num_of_qubits)
+        
+        for i, alice_qc in enumerate(alice_circuits):
+            for instruction in alice_qc.data:
+                if instruction.operation.name == 'x':
                     qc.x(i)
-                    qc.h(i)  
+                elif instruction.operation.name == 'h':
+                    qc.h(i)
         
         qc.barrier()
         
-        for i in range(num_of_qubits):
-            if bob_bases[i]==1:  
-                qc.h(i)
+        for i, bob_qc in enumerate(bob_circuits):
+            for instruction in bob_qc.data:
+                if instruction.operation.name == 'h':
+                    qc.h(i)
+                elif instruction.operation.name == 'measure':
+                    qc.measure(i, i)
         
-        qc.measure_all()
         return qc
     
-    def remove_garbage(self,a_bases,b_bases,bits):
-        return [bit for i, bit in enumerate(bits) if a_bases[i] == b_bases[i]]
-        
-
     def run(self):
-        self.generate_alice_bits()
-        self.choose_alice_bases()
-        self.choose_bob_bases()
+        """Rulează protocolul BB84 complet"""
+        alice_bits = self.sender.generate_bits()
+        alice_bases = self.sender.choose_bases()
         
-        print(f"Alice bits: {self.alice_bits}")
-        print(f"Alice bases: {self.alice_bases}")
-        print(f"Bob bases: {self.bob_bases}")
+        bob_bases = self.receiver.choose_bases()
         
-        full_circuit = self.build_circuits(self.alice_bits, self.alice_bases, self.bob_bases)
+        print(f"Alice bits: {alice_bits}")
+        print(f"Alice bases: {alice_bases}")
+        print(f"Bob bases: {bob_bases}")
+        
+        full_circuit = self.build_circuits(alice_bits, alice_bases, bob_bases)
         
         backend = AerSimulator()
         transpiled_result = transpile(full_circuit, backend)
@@ -107,12 +134,12 @@ class BB84:
         
         print(f"Bob measurement result: {bob_bits}")
         
-        final_key = self.remove_garbage(self.alice_bases, self.bob_bases, bob_bits)
+        self.shared_key = self.receiver.extract_key(bob_bits, alice_bases, bob_bases)
         
-        print(f"Final shared key: {final_key}")
-        print(f"Key length: {len(final_key)}")
+        print(f"Final shared key: {self.shared_key}")
+        print(f"Key length: {len(self.shared_key)}")
         
-        return final_key
+        return self.shared_key
 
 bb84 = BB84(key_length=5)
 bb84.run()
