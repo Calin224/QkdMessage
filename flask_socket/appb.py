@@ -1,6 +1,12 @@
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit, send
 import jwt, time, requests, datetime
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from bb84_qskit import BB84
+from crypto_utils import encrypt_message, decrypt_message, generate_key_from_bb84
 
 SECRET_KEY = "43217896589172571"
 
@@ -10,21 +16,56 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 
 saved_messages = []
 all_messages = []
+
+# Inițializăm BB84 și cheia AES
+bb84_instance = BB84(key_length=16)  # Mărim key_length pentru o cheie mai sigură
+aes_key = None
+
+def initialize_bb84():
+    """Inițializează BB84 și generează cheia AES"""
+    global bb84_instance, aes_key
+    print("🔐 Inițializare BB84...")
+    bb84_instance.run()
+    aes_key = bb84_instance.get_aes_key()
+    print(f"🔑 Cheia AES generată: {aes_key.hex()}")
+    return aes_key
 # ==============================
 #   ROUTES
 # ==============================
 @app.route("/", methods=["GET", "POST"])
 def index():
-    global saved_messages,all_messages
+    global saved_messages, all_messages, aes_key
+    
+    # Inițializăm BB84 dacă nu este deja inițializat
+    if aes_key is None:
+        aes_key = initialize_bb84()
+    
     if request.method == "POST":
         user_message = request.form["message"]
+        
+        # Limitează lungimea mesajului la 200 de caractere
+        if len(user_message) > 200:
+            user_message = user_message[:200] + "..."
+            print("Mesaj trunchiat la 200 caractere")
+        
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print("User sent:", user_message)
+        
+        # Criptăm mesajul
+        encrypted_message = encrypt_message(user_message, aes_key)
+        if encrypted_message:
+            print(f"🔐 Mesaj criptat: {encrypted_message.hex()}")
+        else:
+            print("❌ Eroare la criptare!")
+            return render_template("index1.html", messages=[], saved_messages=saved_messages)
+        
         message_entry = {
             "type": "sent",
             "text": user_message,
+            "encrypted": encrypted_message.hex(),
             "time": timestamp
         }
+        
         # Save locally
         saved_messages.append(user_message)
         saved_messages = saved_messages[-5:]
@@ -32,15 +73,19 @@ def index():
         # Add to combined list and sort by time
         all_messages.append(message_entry)
         all_messages = sorted(all_messages, key=lambda x: x["time"], reverse=False)
-        # Trimite mesajul la serverul B (port 5000)
+        
+        # Trimite mesajul criptat la serverul A (port 5000)
         try:
-            r = requests.post("http://127.0.0.1:5000/receive", json={"msg": user_message})
-            print(f"➡️ Sent to Server B (5000): {user_message} | Response: {r.text}")
+            r = requests.post("http://127.0.0.1:5000/receive", json={
+                "msg": user_message,
+                "encrypted": encrypted_message.hex(),
+                "key": aes_key.hex()
+            })
+            print(f"➡️ Sent to Server A (5000): {user_message} | Encrypted: {encrypted_message.hex()}")
         except Exception as e:
-            print(f"❌ Could not send to Server B: {e}")
+            print(f"❌ Could not send to Server A: {e}")
 
     messages = [f'{m["time"]} | ({m["type"]}) {m["text"]}' for m in all_messages]
-    # messages = ["Hello", "Welcome", "Flask is cool", "WebSockets soon", "Good luck!"]
     return render_template("index1.html", messages=messages, saved_messages=saved_messages)
 
 
@@ -54,14 +99,39 @@ def send_message():
 
 @app.route('/receive', methods=['POST'])
 def receive():
-    """Receive messages from Server B."""
-    global all_messages
+    """Receive messages from Server A."""
+    global all_messages, aes_key
+    
+    # Inițializăm BB84 dacă nu este deja inițializat
+    if aes_key is None:
+        aes_key = initialize_bb84()
+    
     recv_data = request.get_json()
     msg = recv_data.get("msg")
+    encrypted_msg = recv_data.get("encrypted")
+    received_key = recv_data.get("key")
     recv_time = recv_data.get("time", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    
+    # Încercăm să decriptăm mesajul dacă este criptat
+    decrypted_msg = msg
+    if encrypted_msg and received_key:
+        try:
+            # Convertim cheia primită din hex în bytes
+            received_key_bytes = bytes.fromhex(received_key)
+            # Decriptăm mesajul
+            decrypted_msg = decrypt_message(bytes.fromhex(encrypted_msg), received_key_bytes)
+            if decrypted_msg:
+                print(f"🔓 Mesaj decriptat: {decrypted_msg}")
+            else:
+                print("❌ Eroare la decriptare!")
+                decrypted_msg = f"[CRYPT ERROR] {msg}"
+        except Exception as e:
+            print(f"❌ Eroare la procesarea mesajului criptat: {e}")
+            decrypted_msg = f"[CRYPT ERROR] {msg}"
+    
     message_entry = {
         "type": "received",
-        "text": msg,
+        "text": decrypted_msg,
         "time": recv_time
     }
     all_messages.append(message_entry)
@@ -69,7 +139,7 @@ def receive():
 
     socketio.emit("new_message", message_entry)
 
-    print(f"📩 Received from Server B: {msg} at {recv_time}")
+    print(f"📩 Received from Server A: {decrypted_msg} at {recv_time}")
     return "OK"
 
 

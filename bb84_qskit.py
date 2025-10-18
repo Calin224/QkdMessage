@@ -129,6 +129,34 @@ class BB84:
         print(f"Key length: {len(self.shared_key)}")
         
         return self.shared_key
+    
+    def get_aes_key(self):
+        """Returnează cheia în format potrivit pentru AES (16 bytes = 128 bits)"""
+        if not self.shared_key:
+            self.run()
+        
+        # Convertim cheia în string binar
+        key_bits = ''.join(map(str, self.shared_key))
+        
+        # Padding pentru a ajunge la 128 bits (16 bytes)
+        while len(key_bits) < 128:
+            key_bits += '0'  # Padding cu zerouri
+        
+        # Truncăm la 128 bits dacă este prea lungă
+        key_bits = key_bits[:128]
+        
+        # Convertim în bytes
+        key_bytes = []
+        for i in range(0, 128, 8):
+            byte_bits = key_bits[i:i+8]
+            key_bytes.append(int(byte_bits, 2))
+        
+        return bytes(key_bytes)
 
-bb84 = BB84(key_length=5)
-bb84.run()
+# Test doar dacă rulăm direct acest fișier
+if __name__ == "__main__":
+    bb84 = BB84(key_length=5)
+    shared_key = bb84.run()
+    aes_key = bb84.get_aes_key()
+    print(f"AES Key (hex): {aes_key.hex()}")
+    print(f"AES Key length: {len(aes_key)} bytes")

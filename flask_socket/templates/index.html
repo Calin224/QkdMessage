@@ -2,89 +2,410 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Live Chat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QKD Secure Chat - Server A</title>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #f5f5f5;
-      margin: 0;
-      padding: 20px;
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'quantum': {
+              50: '#f0f9ff',
+              100: '#e0f2fe',
+              200: '#bae6fd',
+              300: '#7dd3fc',
+              400: '#38bdf8',
+              500: '#0ea5e9',
+              600: '#0284c7',
+              700: '#0369a1',
+              800: '#075985',
+              900: '#0c4a6e',
+            }
+          }
+        }
+      }
     }
-
-    h2, h3 {
-      text-align: center;
-    }
-
-    form {
-      text-align: center;
-      margin-bottom: 20px;
-    }
-
-    #message-list {
-      list-style-type: none;
-      padding: 0;
-      max-width: 600px;
-      margin: 0 auto;
-    }
-
-    /* Stil pentru mesajele trimise (dreapta) */
-    .sent {
-      background-color: #d1e7dd;
-      text-align: right;
-      margin-left: 40%;
-    }
-
-    /* Stil pentru mesajele primite (stânga) */
-    .received {
-      background-color: #f8d7da;
-      text-align: left;
-      margin-right: 40%;
-    }
-
-    li {
-      margin: 8px 0;
-      padding: 10px;
-      border-radius: 10px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-      word-wrap: break-word;
-    }
-  </style>
+  </script>
 </head>
-<body>
-  <h2>Live Chat</h2>
+<body class="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 min-h-screen">
+  <!-- Header -->
+  <div class="bg-black/20 backdrop-blur-sm border-b border-white/10">
+    <div class="max-w-4xl mx-auto px-4 py-6">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 bg-gradient-to-r from-quantum-400 to-purple-400 rounded-lg flex items-center justify-center">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+            </svg>
+          </div>
+          <div>
+            <h1 class="text-2xl font-bold text-white">QKD Secure Chat</h1>
+            <p class="text-quantum-300 text-sm">Server A - Quantum Encrypted</p>
+          </div>
+        </div>
+        <div class="flex items-center space-x-2">
+          <div class="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
+          <span class="text-green-400 text-sm font-medium">Connected</span>
+        </div>
+      </div>
+    </div>
+  </div>
 
-  <form action="/" method="post">
-    <input type="text" id="message" name="message" placeholder="Type your message..." required>
-    <button type="submit">Send</button>
-  </form>
+  <!-- Loading Screen -->
+  <div id="loading-screen" class="fixed inset-0 bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center z-50">
+    <div class="text-center">
+      <div class="w-20 h-20 mx-auto mb-6 relative">
+        <!-- Quantum Loading Animation -->
+        <div class="absolute inset-0 rounded-full border-4 border-quantum-400/30"></div>
+        <div class="absolute inset-0 rounded-full border-4 border-quantum-400 border-t-transparent animate-spin"></div>
+        <div class="absolute inset-2 rounded-full border-2 border-quantum-300/50 border-b-transparent animate-spin" style="animation-direction: reverse; animation-duration: 1.5s;"></div>
+        <div class="absolute inset-4 rounded-full border border-quantum-200/70 border-r-transparent animate-spin" style="animation-duration: 2s;"></div>
+      </div>
+      <h2 class="text-2xl font-bold text-white mb-2">Initializing Quantum Connection</h2>
+      <p class="text-quantum-300 mb-4">Generating BB84 quantum key...</p>
+      <div class="w-64 bg-white/20 rounded-full h-2 mx-auto">
+        <div id="loading-progress" class="bg-gradient-to-r from-quantum-400 to-purple-400 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+      </div>
+      <p id="loading-status" class="text-sm text-white/60 mt-4">Starting quantum simulation...</p>
+    </div>
+  </div>
 
-  <h3>All Messages (Live):</h3>
-  <ul id="message-list">
-    {% for msg in messages %}
-      {% set msg_type = 'sent' if '(sent)' in msg else 'received' %}
-      <li class="{{ msg_type }}">{{ msg.replace('[','').split(']', 1)[-1].strip() }}</li>
-    {% endfor %}
-  </ul>
+  <!-- Main Content -->
+  <div id="main-content" class="max-w-4xl mx-auto px-4 py-8 hidden">
+    <!-- Message Input -->
+    <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-white/20">
+      <form action="/" method="post" class="flex space-x-4">
+        <div class="flex-1">
+          <input 
+            type="text" 
+            id="message" 
+            name="message" 
+            placeholder="Type your quantum-encrypted message..." 
+            maxlength="200"
+            required
+            class="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-xl text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-quantum-400 focus:border-transparent transition-all duration-200"
+          >
+        </div>
+        <button 
+          type="submit"
+          class="px-6 py-3 bg-gradient-to-r from-quantum-500 to-purple-500 hover:from-quantum-600 hover:to-purple-600 text-white font-semibold rounded-xl transition-all duration-200 transform hover:scale-105 hover:shadow-lg hover:shadow-quantum-500/25"
+        >
+          <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+          </svg>
+          Send
+        </button>
+      </form>
+    </div>
+
+    <!-- Messages Container -->
+    <div class="bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 overflow-hidden">
+      <div class="bg-white/10 px-6 py-4 border-b border-white/10">
+        <h3 class="text-lg font-semibold text-white flex items-center">
+          <svg class="w-5 h-5 mr-2 text-quantum-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+          </svg>
+          Live Messages
+        </h3>
+      </div>
+      
+      <div class="max-h-96 overflow-auto p-6">
+        <ul id="message-list" class="space-y-4">
+          {% for msg in messages %}
+            {% set msg_type = 'sent' if '(sent)' in msg else 'received' %}
+            <li class="flex {% if msg_type == 'sent' %}justify-end{% else %}justify-start{% endif %}">
+              <div class="max-w-xs lg:max-w-md px-4 py-3 rounded-2xl {% if msg_type == 'sent' %}bg-gradient-to-r from-quantum-500 to-quantum-600 text-white{% else %}bg-white/20 text-white border border-white/30{% endif %} shadow-lg overflow-hidden">
+                <div class="flex items-start space-x-2">
+                  {% if msg_type == 'received' %}
+                    <div class="w-8 h-8 bg-gradient-to-r from-purple-400 to-pink-400 rounded-full flex items-center justify-center flex-shrink-0">
+                      <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                      </svg>
+                    </div>
+                  {% endif %}
+                  <div class="flex-1">
+                    <p class="text-sm font-medium opacity-80 mb-1">
+                      {% if msg_type == 'sent' %}You{% else %}Server B{% endif %}
+                    </p>
+                    <p class="text-sm break-words whitespace-pre-wrap">{{ msg.replace('[','').split(']', 1)[-1].strip()[:200] + ('...' if msg.replace('[','').split(']', 1)[-1].strip()|length > 200 else '') }}</p>
+                  </div>
+                  {% if msg_type == 'sent' %}
+                    <div class="w-8 h-8 bg-gradient-to-r from-quantum-400 to-blue-400 rounded-full flex items-center justify-center flex-shrink-0">
+                      <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                      </svg>
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
 
   <script>
     const socket = io();
+    let isConnected = false;
+
+    // Loading simulation
+    function simulateBB84Loading() {
+      const loadingScreen = document.getElementById('loading-screen');
+      const mainContent = document.getElementById('main-content');
+      const progressBar = document.getElementById('loading-progress');
+      const statusText = document.getElementById('loading-status');
+      
+      const steps = [
+        { progress: 10, status: 'Initializing quantum simulator...' },
+        { progress: 25, status: 'Generating random quantum bits...' },
+        { progress: 40, status: 'Creating quantum circuits...' },
+        { progress: 55, status: 'Measuring quantum states...' },
+        { progress: 70, status: 'Extracting shared key...' },
+        { progress: 85, status: 'Converting to AES format...' },
+        { progress: 95, status: 'Finalizing encryption...' },
+        { progress: 100, status: 'Quantum connection established!' }
+      ];
+      
+      let currentStep = 0;
+      
+      const updateProgress = () => {
+        if (currentStep < steps.length) {
+          const step = steps[currentStep];
+          progressBar.style.width = step.progress + '%';
+          statusText.textContent = step.status;
+          currentStep++;
+          
+          setTimeout(updateProgress, Math.random() * 800 + 500); // Random delay between 500-1300ms
+        } else {
+          // Loading complete
+          setTimeout(() => {
+            loadingScreen.style.opacity = '0';
+            setTimeout(() => {
+              loadingScreen.style.display = 'none';
+              mainContent.classList.remove('hidden');
+              mainContent.style.opacity = '0';
+              mainContent.style.transform = 'translateY(20px)';
+              mainContent.style.transition = 'all 0.6s ease-out';
+              setTimeout(() => {
+                mainContent.style.opacity = '1';
+                mainContent.style.transform = 'translateY(0)';
+              }, 50);
+            }, 300);
+          }, 1000);
+        }
+      };
+      
+      updateProgress();
+    }
+
+    // Check if this is the first visit (no session storage)
+    document.addEventListener('DOMContentLoaded', () => {
+      const hasVisited = sessionStorage.getItem('bb84Initialized');
+      
+      if (!hasVisited) {
+        // First visit - show loading screen
+        simulateBB84Loading();
+        sessionStorage.setItem('bb84Initialized', 'true');
+      } else {
+        // Already visited - hide loading screen immediately
+        const loadingScreen = document.getElementById('loading-screen');
+        const mainContent = document.getElementById('main-content');
+        
+        if (loadingScreen && mainContent) {
+          loadingScreen.style.display = 'none';
+          mainContent.classList.remove('hidden');
+          mainContent.style.opacity = '1';
+          mainContent.style.transform = 'translateY(0)';
+        }
+      }
+    });
 
     socket.on('connect', () => {
-      console.log('🟢 Connected to WebSocket');
+      console.log('Connected to WebSocket');
+      isConnected = true;
+      // Update connection status
+      const statusIndicator = document.querySelector('.animate-pulse');
+      const statusText = document.querySelector('.text-green-400');
+      if (statusIndicator && statusText) {
+        statusIndicator.classList.remove('bg-red-400');
+        statusIndicator.classList.add('bg-green-400');
+        statusText.textContent = 'Connected';
+      }
     });
+
+    socket.on('disconnect', () => {
+      console.log('Disconnected from WebSocket');
+      const statusIndicator = document.querySelector('.animate-pulse');
+      const statusText = document.querySelector('.text-green-400');
+      if (statusIndicator && statusText) {
+        statusIndicator.classList.remove('bg-green-400');
+        statusIndicator.classList.add('bg-red-400');
+        statusText.textContent = 'Disconnected';
+      }
+    });
+
+    // Typing animation function
+    function typeText(element, text, speed = 50) {
+      element.textContent = '';
+      let i = 0;
+      const timer = setInterval(() => {
+        if (i < text.length) {
+          element.textContent += text.charAt(i);
+          i++;
+        } else {
+          clearInterval(timer);
+        }
+      }, speed);
+    }
+
+    // Show typing indicator
+    function showTypingIndicator() {
+      const messageList = document.getElementById('message-list');
+      const typingLi = document.createElement('li');
+      typingLi.id = 'typing-indicator';
+      typingLi.className = 'flex justify-start animate-fade-in';
+      
+      typingLi.innerHTML = `
+        <div class="max-w-xs lg:max-w-md px-4 py-3 rounded-2xl bg-white/20 text-white border border-white/30 shadow-lg">
+          <div class="flex items-start space-x-2">
+            <div class="w-8 h-8 bg-gradient-to-r from-purple-400 to-pink-400 rounded-full flex items-center justify-center flex-shrink-0">
+              <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+              </svg>
+            </div>
+            <div class="flex-1">
+              <p class="text-sm font-medium opacity-80 mb-1">Server B</p>
+              <div class="flex items-center space-x-1">
+                <div class="flex space-x-1">
+                  <div class="w-2 h-2 bg-white/60 rounded-full animate-bounce"></div>
+                  <div class="w-2 h-2 bg-white/60 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
+                  <div class="w-2 h-2 bg-white/60 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+                </div>
+                <span class="text-xs text-white/60 ml-2">typing...</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      messageList.appendChild(typingLi);
+      messageList.scrollTop = messageList.scrollHeight;
+    }
+
+    // Hide typing indicator
+    function hideTypingIndicator() {
+      const typingIndicator = document.getElementById('typing-indicator');
+      if (typingIndicator) {
+        typingIndicator.remove();
+      }
+    }
 
     socket.on('new_message', (data) => {
+      hideTypingIndicator();
+      
+      const messageList = document.getElementById('message-list');
       const li = document.createElement('li');
-
-      // eliminăm data din text (de exemplu "[2025-10-18 15:30:12] Salut!")
+      
+      // Clean text from timestamp
       const cleanText = data.text.replace(/\[.*?\]\s*/, "");
-
-      li.textContent = cleanText;
-      li.classList.add(data.type); // "sent" or "received"
-
-      document.getElementById('message-list').appendChild(li);
+      
+      // Determine message type
+      const isSent = data.type === 'sent';
+      
+      li.className = `flex ${isSent ? 'justify-end' : 'justify-start'} animate-fade-in`;
+      
+      li.innerHTML = `
+              <div class="max-w-xs lg:max-w-md px-4 py-3 rounded-2xl ${isSent ? 'bg-gradient-to-r from-quantum-500 to-quantum-600 text-white' : 'bg-white/20 text-white border border-white/30'} shadow-lg overflow-hidden">
+          <div class="flex items-start space-x-2">
+            ${!isSent ? `
+              <div class="w-8 h-8 bg-gradient-to-r from-purple-400 to-pink-400 rounded-full flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                </svg>
+              </div>
+            ` : ''}
+            <div class="flex-1">
+              <p class="text-sm font-medium opacity-80 mb-1">
+                ${isSent ? 'You' : 'Server B'}
+              </p>
+              <p class="text-sm message-content break-words whitespace-pre-wrap">${cleanText.length > 200 ? cleanText.substring(0, 200) + '...' : cleanText}</p>
+            </div>
+            ${isSent ? `
+              <div class="w-8 h-8 bg-gradient-to-r from-quantum-400 to-blue-400 rounded-full flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                </svg>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      `;
+      
+      messageList.appendChild(li);
+      
+      // Add typing animation for received messages
+      if (!isSent) {
+        const messageContent = li.querySelector('.message-content');
+        const originalText = messageContent.textContent;
+        messageContent.textContent = '';
+        
+        setTimeout(() => {
+          typeText(messageContent, originalText, 30);
+        }, 500);
+      }
+      
+      // Scroll to bottom
+      messageList.scrollTop = messageList.scrollHeight;
     });
+
+    // Simulate typing indicator for incoming messages
+    socket.on('message_typing', () => {
+      showTypingIndicator();
+    });
+
+    // Add keyboard shortcut to reset loading screen (for demo purposes)
+    document.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.key === 'r') {
+        e.preventDefault();
+        sessionStorage.removeItem('bb84Initialized');
+        location.reload();
+      }
+    });
+
+    // Add fade-in animation and custom scrollbar
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes fade-in {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .animate-fade-in {
+        animation: fade-in 0.3s ease-out;
+      }
+      
+      /* Custom scrollbar for messages container */
+      .overflow-auto::-webkit-scrollbar {
+        width: 6px;
+      }
+      
+      .overflow-auto::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 3px;
+      }
+      
+      .overflow-auto::-webkit-scrollbar-thumb {
+        background: rgba(14, 165, 233, 0.5);
+        border-radius: 3px;
+      }
+      
+      .overflow-auto::-webkit-scrollbar-thumb:hover {
+        background: rgba(14, 165, 233, 0.7);
+      }
+    `;
+    document.head.appendChild(style);
   </script>
 </body>
 </html>
