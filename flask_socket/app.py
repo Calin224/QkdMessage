@@ -115,27 +115,36 @@ def index():
 def establish_connection():
     global shared_key
     try:
+        # Emit connection attempt to all clients
+        socketio.emit('connection_attempt', {'status': 'starting', 'message': 'Initiating quantum key distribution...'})
+        
         receiver_bases = None
         response = requests.post("http://127.0.0.1:5001/establish")
         if response.ok:
             receiver_bases = response.json().get('bases')
             print(f"📡 Received Bob bases: {receiver_bases}")
+            socketio.emit('connection_progress', {'status': 'bases_received', 'message': 'Quantum bases received from Server B'})
         else:
             print(f"❌ Establish failed with status {response.status_code}")
+            socketio.emit('connection_error', {'error': 'Failed to get bases from Server B'})
             return jsonify({"error": "Failed to get bases"}), 500
 
+        socketio.emit('connection_progress', {'status': 'processing', 'message': 'Processing quantum key exchange...'})
         shared_key = bb84.run(receiver_bases)
         print(f"Shared_key SSSSSS: {shared_key}")
 
         try:
             r = requests.post("http://127.0.0.1:5001/receive-shared-key", json={"shared_key": shared_key})
             print(f"Sent shared_key to App B, response: {r.text}")
+            socketio.emit('connection_success', {'status': 'connected', 'message': 'Quantum connection established!', 'shared_key': shared_key})
         except Exception as e:
             print(f"❌ Could not send shared_key to App B: {e}")
+            socketio.emit('connection_error', {'error': f'Could not send shared key to Server B: {str(e)}'})
 
         return jsonify({"shared_key": shared_key})
     except Exception as e:
         print(f"❌ Could not establish connection: {e}")
+        socketio.emit('connection_error', {'error': str(e)})
         return jsonify({"error": str(e)}), 500
 
 

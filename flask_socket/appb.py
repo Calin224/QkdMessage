@@ -155,7 +155,11 @@ def receive_shared_key():
     global shared_key
     data = request.get_json()
     shared_key = data.get('shared_key')
-    print(f"Received shared_key from App A: {shared_key}")  
+    print(f"Received shared_key from App A: {shared_key}")
+    
+    # Emit connection success to all clients on Server B
+    socketio.emit('connection_success', {'status': 'connected', 'message': 'Quantum connection established!', 'shared_key': shared_key})
+    
     return jsonify({"status": "ok"})
 
 @app.route('/debug-shared-key')
